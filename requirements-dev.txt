@@ -1,5 +1,8 @@
 -r requirements.txt
 
+# Loads .env into os.environ so manage.py works without manually exporting vars.
+python-dotenv==1.0.1
+
 # Test and lint tooling (PLAN §2).
 pytest==8.4.2
 pytest-django==4.14.0
