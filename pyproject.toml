@@ -1,0 +1,49 @@
+[project]
+name = "ai-work-intake-backend"
+version = "0.1.0"
+description = "AI-Assisted Work Intake System backend"
+requires-python = ">=3.12"
+
+# Dependencies are pinned in requirements.txt / requirements-dev.txt so that the
+# Dockerfile and CI can install them with plain pip and a layer cache.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "migrations"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "DJ",   # flake8-django
+    "T20",  # no print() outside management commands
+    "RUF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Management commands talk to the operator through stdout.
+"work_items/management/commands/*.py" = ["T20"]
+
+# DJ001 ("avoid null=True on string fields") is the right default, but PLAN §4
+# needs real NULLs: "not analysed yet" is absent, not empty. The
+# work_item_reviewable_has_analysis CHECK constraint tests `IS NOT NULL`, and
+# with blank-string defaults it would pass for every row and protect nothing.
+# RUF012 wants ClassVar on Django's `Meta`/`ModelAdmin` declarations, which are
+# framework configuration rather than mutable shared state.
+"work_items/models.py" = ["DJ001", "RUF012"]
+"work_items/admin.py" = ["RUF012"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "work_items"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py"]
+testpaths = ["work_items/tests"]
+addopts = "--strict-markers"
+filterwarnings = ["error::DeprecationWarning"]

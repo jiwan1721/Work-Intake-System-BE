@@ -1,0 +1,7 @@
+# Runtime dependencies (PLAN §2). Exact pins for reproducible builds.
+Django==5.2.17
+djangorestframework==3.16.1
+drf-spectacular==0.28.0
+pydantic==2.13.5
+dj-database-url==2.3.0
+psycopg[binary]==3.3.6

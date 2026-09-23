@@ -1,0 +1,11 @@
+-r requirements.txt
+
+# Test and lint tooling (PLAN §2).
+pytest==8.4.2
+pytest-django==4.14.0
+ruff==0.12.12
+
+# Optional real LLM provider (AI_PROVIDER=anthropic, see docs/decisions.md).
+# Not needed to run or test the app: the mock provider is the default and
+# the adapter's tests mock the SDK client, so no API key is ever required.
+anthropic==0.125.0

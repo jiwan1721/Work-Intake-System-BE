@@ -1,0 +1,198 @@
+# ==========================================
+# Python
+# ==========================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python cache / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+MANIFEST
+
+# ==========================================
+# Virtual Environment
+# ==========================================
+
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ==========================================
+# Django
+# ==========================================
+
+*.log
+
+# Local Django database
+db.sqlite3
+db.sqlite3-journal
+
+# Django migrations
+# Uncomment only if you intentionally don't want to track migrations
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# Django static/media files
+/static/
+/media/
+
+# ==========================================
+# Environment Variables / Secrets
+# ==========================================
+
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# ==========================================
+# IDE / Editors
+# ==========================================
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ==========================================
+# macOS
+# ==========================================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ==========================================
+# Windows
+# ==========================================
+
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==========================================
+# Linux
+# ==========================================
+
+.directory
+
+# ==========================================
+# Docker
+# ==========================================
+
+# Docker environment files
+docker-compose.override.yml
+
+# Docker volumes
+docker-data/
+docker-volumes/
+
+# ==========================================
+# Node / Frontend
+# ==========================================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Frontend build output
+dist/
+build/
+.next/
+.nuxt/
+
+# ==========================================
+# Django / Celery / Task Queue
+# ==========================================
+
+celerybeat-schedule
+celerybeat.pid
+
+# Django-Q
+django_q/
+*.pid
+
+# ==========================================
+# Local development files
+# ==========================================
+
+*.local
+*.local.*
+local_settings.py
+
+# ==========================================
+# Test / Coverage
+# ==========================================
+
+.tox/
+.nox/
+.pyre/
+.pytype/
+
+# ==========================================
+# Jupyter
+# ==========================================
+
+.ipynb_checkpoints/
+
+# ==========================================
+# OS / Temporary files
+# ==========================================
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# ==========================================
+# Secrets / Certificates
+# ==========================================
+
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# ==========================================
+# Project-specific generated files
+# ==========================================
+
+logs/
+tmp/
+cache/
+
+# Generated API/schema files
+*.schema.json
