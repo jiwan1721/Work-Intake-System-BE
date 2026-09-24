@@ -10,9 +10,10 @@ from django.db import connection
 from django.test import override_settings
 from rest_framework.test import APIClient
 
-from work_items.ai.base import AIProviderError, AITimeoutError, WorkItemInput
+from work_items.ai.base import STALE_ANALYSIS_CODE, AIProviderError, AITimeoutError, WorkItemInput
 from work_items.domain.status import WorkItemStatus
 from work_items.models import AnalysisAttempt, WorkItem
+from work_items.services.analysis import reap_stale_analyses
 
 from .factories import make_work_item
 from .test_api_skeleton import assert_envelope
@@ -295,6 +296,32 @@ def test_analyse_from_the_wrong_status_is_409(
     error = assert_envelope(response.json(), "INVALID_TRANSITION")
     assert error["details"]["currentStatus"] == status
     assert provider.call_count == 0
+
+
+def test_analyse_is_200_even_when_the_reaper_wins(
+    client: APIClient, provider: FakeProvider, monkeypatch
+) -> None:
+    """A result that arrives after the reaper gave up is not the client's problem.
+
+    The request was processed correctly, so it gets 200 and the item as it
+    actually is — FAILED and retryable — rather than a conflict.
+    """
+    item = make_work_item(external_id="CRM-reaped")
+
+    def reap_then_answer(work_item: WorkItemInput, *, timeout: float) -> str:
+        reap_stale_analyses(older_than_seconds=0)
+        return GOOD_JSON
+
+    monkeypatch.setattr(provider, "analyse", reap_then_answer)
+
+    response = client.post(f"{LIST_URL}/{item.id}/analyse")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == WorkItemStatus.FAILED
+    assert body["lastError"]["code"] == STALE_ANALYSIS_CODE
+    assert body["analysis"] is None
+    assert body["allowedActions"] == ["retry"]
 
 
 def test_analyse_on_an_unknown_item_is_404(client: APIClient, provider: FakeProvider) -> None:

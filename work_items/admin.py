@@ -57,7 +57,8 @@ class WorkItemAdmin(admin.ModelAdmin):
     list_filter = ("status", "category", "priority")
     search_fields = ("external_id", "title", "description")
     date_hierarchy = "created_at"
-    ordering = ("-created_at",)
+    # No `ordering`: the model's Meta ordering is newest-first and total, which
+    # is what the admin's own pagination needs.
     inlines = (AnalysisAttemptInline, StatusTransitionInline)
     # Status is owned by workflow.transition(); editing it here would bypass
     # the state machine and the audit trail.

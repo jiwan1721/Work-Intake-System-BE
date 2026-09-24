@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from work_items.domain.status import WorkItemStatus
+from work_items.models import WorkItem
 
 from .factories import make_work_item
 
@@ -179,6 +181,32 @@ def test_an_out_of_range_page_is_a_404_envelope(client: APIClient) -> None:
 
     assert response.status_code == 404
     assert_envelope(response.json(), "NOT_FOUND")
+
+
+def test_paging_covers_every_item_when_timestamps_collide(client: APIClient) -> None:
+    """Rows created in the same microsecond must still page cleanly.
+
+    `-created_at` on its own leaves such rows in an order PostgreSQL is free to
+    vary between queries, and under LIMIT/OFFSET that shows a row on two pages
+    or on none. The `-id` tiebreaker in `WorkItem.Meta.ordering` is what makes
+    the order total.
+    """
+    for index in range(6):
+        make_work_item(external_id=f"CRM-tie{index}")
+    WorkItem.objects.update(created_at=timezone.now())
+
+    paged = [
+        row["externalId"]
+        for page in (1, 2)
+        for row in client.get(f"/api/v1/work-items?pageSize=3&page={page}").json()["results"]
+    ]
+
+    assert sorted(paged) == [f"CRM-tie{index}" for index in range(6)]
+
+
+def test_the_list_order_is_total() -> None:
+    """A unique column has to come last, or paging is not reproducible."""
+    assert WorkItem._meta.ordering[-1].lstrip("-") == "id"
 
 
 def test_items_come_back_newest_first(client: APIClient) -> None:

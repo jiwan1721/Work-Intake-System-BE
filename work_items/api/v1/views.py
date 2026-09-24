@@ -49,11 +49,45 @@ class InvalidStatusFilter(DomainError):
     http_status = http_status.HTTP_400_BAD_REQUEST
 
 
+class InvalidManualTransition(DomainError):
+    """A transition an operator may not request directly.
+
+    Same code and status as any other rejected transition — to a client it is
+    one — but the message says why, because a pair like RECEIVED -> ANALYSING
+    is in the transition table and so looks legal from the outside.
+    """
+
+    code = "INVALID_TRANSITION"
+    http_status = http_status.HTTP_409_CONFLICT
+
+    def __init__(self, current: WorkItemStatus, target: WorkItemStatus) -> None:
+        super().__init__(
+            f"Cannot move work item from {current} to {target}."
+            + (
+                " That status is reached by running an analysis, not by setting it."
+                if target in {WorkItemStatus.ANALYSING, WorkItemStatus.READY_FOR_REVIEW}
+                else ""
+            ),
+            {"currentStatus": str(current), "requestedStatus": str(target)},
+        )
+
+
 def _base_queryset() -> QuerySet[WorkItem]:
-    return WorkItem.objects.all().order_by("-created_at")
+    # No explicit order_by: `WorkItem.Meta.ordering` is newest-first with a
+    # tiebreaker, and restating it here is how the two drift apart.
+    return WorkItem.objects.all()
 
 
 def _get_item_or_404(pk: Any) -> WorkItem:
+    """Confirm the item exists before a view acts on it.
+
+    The services raise `WorkItemNotFound` for a missing row too, so on the
+    action endpoints this lookup is technically redundant. It is kept because
+    it answers "does this exist?" before anything is constructed or claimed,
+    which keeps 404 and 409 from depending on the order of steps inside a
+    service. One indexed primary-key read on an operator-initiated action is
+    not a cost worth optimising.
+    """
     item = WorkItem.objects.filter(pk=pk).first()
     if item is None:
         raise WorkItemNotFound(pk)
@@ -219,21 +253,3 @@ class StatusView(APIView):
             reason="manual transition by operator",
         )
         return Response(_serialize(updated))
-
-
-class InvalidManualTransition(DomainError):
-    """A transition an operator may not request directly."""
-
-    code = "INVALID_TRANSITION"
-    http_status = http_status.HTTP_409_CONFLICT
-
-    def __init__(self, current: WorkItemStatus, target: WorkItemStatus) -> None:
-        super().__init__(
-            f"Cannot move work item from {current} to {target}."
-            + (
-                " That status is reached by running an analysis, not by setting it."
-                if target in {WorkItemStatus.ANALYSING, WorkItemStatus.READY_FOR_REVIEW}
-                else ""
-            ),
-            {"currentStatus": str(current), "requestedStatus": str(target)},
-        )

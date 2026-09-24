@@ -13,11 +13,15 @@ from pathlib import Path
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
+# python-dotenv is a dev convenience so `manage.py` works without exporting
+# vars by hand. It is not in requirements.txt: under Docker Compose and in CI
+# the environment is already populated, so the import is allowed to fail.
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
-    pass  # python-dotenv not installed; rely on env vars being set externally
+    pass
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -101,6 +105,13 @@ DATABASES = {
     "default": dj_database_url.parse(
         os.environ.get("DATABASE_URL", "postgres://intake:intake@localhost:5432/intake"),
         conn_max_age=env_int("DB_CONN_MAX_AGE", 60),
+        # Persistent connections outlive the server they point at. After a
+        # database restart, failover or an idle timeout on a pooler, the first
+        # request to reuse a dead connection fails with OperationalError —
+        # which is a confusing 500 for whoever happens to arrive first. The
+        # health check costs one cheap round trip per request and turns that
+        # into a transparent reconnect.
+        conn_health_checks=True,
     )
 }
 

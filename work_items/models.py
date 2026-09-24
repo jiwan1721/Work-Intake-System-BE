@@ -75,7 +75,12 @@ class WorkItem(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        # `id` breaks ties. `created_at` alone is not a total order, and
+        # PostgreSQL makes no promise about the order of rows it cannot
+        # distinguish — under LIMIT/OFFSET that lets a row appear on two pages
+        # or on none. Two items created in the same microsecond are rare but
+        # not impossible, and a paginated list must never lose one.
+        ordering = ["-created_at", "-id"]
         constraints = [
             models.UniqueConstraint(fields=["external_id"], name="uniq_work_item_external_id"),
             models.CheckConstraint(
@@ -98,7 +103,18 @@ class WorkItem(models.Model):
                 name="work_item_reviewable_has_analysis",
             ),
         ]
-        indexes = [models.Index(fields=["status", "-created_at"], name="work_item_status_created")]
+        indexes = [
+            models.Index(fields=["status", "-created_at"], name="work_item_status_created"),
+            # The reaper runs on a timer and asks one question: which analyses
+            # started too long ago? A partial index answers it directly and
+            # only ever holds the items currently in flight, so it stays a few
+            # pages wide no matter how large the table grows.
+            models.Index(
+                fields=["analysis_started_at"],
+                name="work_item_analysing_started",
+                condition=models.Q(status=str(WorkItemStatus.ANALYSING)),
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.external_id} ({self.status})"

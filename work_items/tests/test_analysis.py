@@ -10,6 +10,7 @@ from django.db import connection
 from django.test import override_settings
 
 from work_items.ai.base import (
+    STALE_ANALYSIS_CODE,
     AIError,
     AIInvalidOutputError,
     AIProviderError,
@@ -24,7 +25,12 @@ from work_items.domain.errors import (
 )
 from work_items.domain.status import AttemptOutcome, WorkItemStatus
 from work_items.models import AnalysisAttempt, StatusTransition, WorkItem
-from work_items.services.analysis import analyse_work_item, retry_work_item, run_analysis
+from work_items.services.analysis import (
+    analyse_work_item,
+    reap_stale_analyses,
+    retry_work_item,
+    run_analysis,
+)
 
 from .factories import make_work_item
 
@@ -260,6 +266,74 @@ def test_two_racing_analyse_calls_call_the_model_once() -> None:
 def test_missing_item_is_reported_as_not_found() -> None:
     with pytest.raises(WorkItemNotFound):
         run_analysis(uuid.uuid4(), expected_from=WorkItemStatus.RECEIVED, provider=FakeProvider())
+
+
+# --- Racing the reaper (PLAN §5) -------------------------------------------
+#
+# A call can outlive 2 x AI_TIMEOUT_SECONDS — the SDK retries internally, and a
+# hung socket does not respect a client deadline. The reaper then declares the
+# item abandoned while the call is still in flight. Whatever the model says
+# afterwards arrives too late: the compare-and-set refuses it, and that refusal
+# must not escape as an exception.
+
+
+class ReapingProvider(FakeProvider):
+    """A provider the reaper gives up on mid-call."""
+
+    def analyse(self, item: WorkItemInput, *, timeout: float) -> str | dict:
+        # Everything already started counts as abandoned, which is the state a
+        # call that outlives the cutoff is really in.
+        reap_stale_analyses(older_than_seconds=0)
+        return super().analyse(item, timeout=timeout)
+
+
+def test_a_late_result_loses_to_the_reaper_instead_of_raising() -> None:
+    item = make_work_item(external_id="CRM-20")
+
+    returned = analyse_work_item(item.id, provider=ReapingProvider())
+
+    # The reaper won. The item is FAILED and retryable, not READY_FOR_REVIEW,
+    # and the caller gets the item as it actually is rather than a 409.
+    assert returned.status == WorkItemStatus.FAILED
+    assert returned.last_error_code == STALE_ANALYSIS_CODE
+    assert returned.allowed_actions(max_attempts=5) == ["retry"]
+
+
+def test_a_late_result_never_overwrites_the_reaped_state() -> None:
+    item = make_work_item(external_id="CRM-21")
+
+    analyse_work_item(item.id, provider=ReapingProvider())
+
+    item.refresh_from_db()
+    assert item.category is None, "a discarded result must not reach the work item"
+    assert item.summary is None
+    assert not StatusTransition.objects.filter(
+        work_item=item, to_status=WorkItemStatus.READY_FOR_REVIEW
+    ).exists()
+
+
+def test_the_discarded_call_is_still_recorded_on_its_attempt() -> None:
+    """The attempt describes the model call; the status describes the item."""
+    item = make_work_item(external_id="CRM-22")
+
+    analyse_work_item(item.id, provider=ReapingProvider())
+
+    attempt = AnalysisAttempt.objects.get(work_item=item)
+    assert attempt.outcome == AttemptOutcome.SUCCEEDED
+    assert attempt.finished_at is not None
+
+
+def test_a_late_failure_keeps_the_reapers_reason_on_the_item() -> None:
+    item = make_work_item(external_id="CRM-23")
+
+    returned = analyse_work_item(
+        item.id, provider=ReapingProvider(raises=AITimeoutError("no answer"))
+    )
+
+    assert returned.status == WorkItemStatus.FAILED
+    # The reaper's write stands; the real error survives on the attempt row.
+    assert returned.last_error_code == STALE_ANALYSIS_CODE
+    assert AnalysisAttempt.objects.get(work_item=item).error_code == AITimeoutError.code
 
 
 # --- Retry -----------------------------------------------------------------
