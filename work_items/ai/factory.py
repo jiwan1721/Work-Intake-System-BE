@@ -16,8 +16,9 @@ from .mock_provider import FAILURE_NONE, MockProvider
 
 MOCK = "mock"
 ANTHROPIC = "anthropic"
+NVIDIA = "nvidia"
 
-ALLOWED_PROVIDERS = (MOCK, ANTHROPIC)
+ALLOWED_PROVIDERS = (MOCK, ANTHROPIC, NVIDIA)
 
 
 def get_ai_provider(name: str | None = None) -> AIProvider:
@@ -36,6 +37,16 @@ def get_ai_provider(name: str | None = None) -> AIProvider:
         from .anthropic_provider import AnthropicProvider
 
         return AnthropicProvider(
+            api_key=settings.AI_API_KEY,
+            model=settings.AI_MODEL or None,
+        )
+
+    if provider_name == NVIDIA:
+        # Imported lazily: the SDK is an optional dependency and the default
+        # install never needs it.
+        from .nvidia_provider import NvidiaProvider
+
+        return NvidiaProvider(
             api_key=settings.AI_API_KEY,
             model=settings.AI_MODEL or None,
         )
