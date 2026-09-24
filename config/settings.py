@@ -57,6 +57,17 @@ ALLOWED_HOSTS = [
     h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()
 ]
 
+# CORS (PLAN §11) — in debug mode allow all origins so the Vite dev server
+# works without extra config. In production, set CORS_ALLOWED_ORIGINS explicitly.
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = [
+        o.strip()
+        for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -64,6 +75,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "rest_framework",
     "drf_spectacular",
     "work_items",
@@ -71,6 +83,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

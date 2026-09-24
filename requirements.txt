@@ -5,3 +5,4 @@ drf-spectacular==0.28.0
 pydantic==2.13.5
 dj-database-url==2.3.0
 psycopg[binary]==3.3.6
+django-cors-headers==4.9.0
