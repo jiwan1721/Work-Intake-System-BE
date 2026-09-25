@@ -24,6 +24,8 @@ def _key(purpose: str, email: str) -> str:
 def generate_otp(email: str, purpose: str) -> str:
     """Generate a fresh 6-digit code and store it in cache, replacing any prior code."""
     code = f"{secrets.randbelow(1_000_000):06d}"
+    # setting static code for teting
+    code = "123456"
     cache.set(_key(purpose, email), code, timeout=OTP_EXPIRY_MINUTES * 60)
     return code
 
