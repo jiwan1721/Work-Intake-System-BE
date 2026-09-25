@@ -16,8 +16,13 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def client() -> APIClient:
-    return APIClient()
+def client(django_user_model) -> APIClient:
+    user = django_user_model.objects.create_user(
+        email="operator@test.local", password="testpass123"
+    )
+    api_client = APIClient()
+    api_client.force_authenticate(user=user)
+    return api_client
 
 
 def assert_envelope(body: dict, code: str) -> dict:

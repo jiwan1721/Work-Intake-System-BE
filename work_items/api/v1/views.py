@@ -24,6 +24,7 @@ from django.db.models import Prefetch, QuerySet
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status as http_status
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -105,10 +106,10 @@ class WorkItemListCreateView(ListCreateAPIView):
     serializer_class = WorkItemSerializer
 
     def get_permissions(self):
-        # Only intake is machine-to-machine; listing stays open for the demo UI.
+        # Intake is machine-to-machine (API key); listing requires operator auth.
         if self.request.method == "POST":
             return [HasIntakeApiKey()]
-        return []
+        return [IsAuthenticated()]
 
     def get_queryset(self) -> QuerySet[WorkItem]:
         queryset = _base_queryset()

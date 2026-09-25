@@ -8,6 +8,7 @@ development-only fallback that is refused when `DEBUG` is off.
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -76,13 +77,18 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
+    "django_currentuser",
     "rest_framework",
+    "rest_framework_simplejwt",
     "drf_spectacular",
+    "users",
     "work_items",
 ]
 
 if DEBUG:
     INSTALLED_APPS += ["django_extensions"]
+
+AUTH_USER_MODEL = "users.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -91,6 +97,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Tracks the authenticated user on each request so CurrentUserField
+    # on BaseModel can record who created/modified each row.
+    "django_currentuser.middleware.ThreadLocalUserMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -158,13 +167,58 @@ REST_FRAMEWORK = {
     # /api/work-items 404s instead of silently resolving to v1.
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.NamespaceVersioning",
     "ALLOWED_VERSIONS": ["v1"],
+    # Allows namespace-less routes (e.g. auth endpoints) to coexist with
+    # versioned work_items routes without raising NotFound during schema generation.
+    "DEFAULT_VERSION": "v1",
     "EXCEPTION_HANDLER": "work_items.api.exceptions.custom_exception_handler",
     "DEFAULT_PAGINATION_CLASS": "work_items.api.pagination.WorkItemPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    "UNAUTHENTICATED_USER": None,
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "common.utils.authentication.CustomJWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
+
+# --- JWT (Simple JWT) --------------------------------------------------------
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("JWT_ACCESS_MINUTES", 60)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("JWT_REFRESH_DAYS", 7)),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+    "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    # In production, set DJANGO_SECRET_KEY to a strong value; that key signs all tokens.
+    "SIGNING_KEY": SECRET_KEY,
+    "VERIFYING_KEY": None,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+}
+
+# --- Email -------------------------------------------------------------------
+# Console backend in dev (prints to terminal); switch to SMTP in production.
+
+EMAIL_BACKEND = (
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = env_int("EMAIL_PORT", 587)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@workintake.local")
+
+# Frontend origin used in password-reset emails.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "AI-Assisted Work Intake System",
@@ -183,6 +237,14 @@ AI_MODEL = os.environ.get("AI_MODEL", "").strip()
 AI_API_KEY = os.environ.get("AI_API_KEY", "").strip()
 AI_TIMEOUT_SECONDS = env_float("AI_TIMEOUT_SECONDS", 20.0)
 AI_MAX_ATTEMPTS = env_int("AI_MAX_ATTEMPTS", 5)
+# When True, any failure from the configured provider is silently caught and
+# the mock is used instead. Useful in dev/demo when an API key is absent but
+# you still want real-provider code paths exercised.
+AI_FALLBACK_TO_MOCK = env_bool("AI_FALLBACK_TO_MOCK", False)
+
+# LangChain provider — used when AI_PROVIDER=langchain.
+# Selects which LLM backend LangChain routes to; AI_API_KEY and AI_MODEL are reused.
+LANGCHAIN_BACKEND = os.environ.get("LANGCHAIN_BACKEND", "anthropic").strip().lower()
 
 MOCK_AI_LATENCY_MS = env_int("MOCK_AI_LATENCY_MS", 800)
 MOCK_AI_FAILURE_MODE = os.environ.get("MOCK_AI_FAILURE_MODE", "none").strip().lower()

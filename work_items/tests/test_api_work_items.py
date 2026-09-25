@@ -51,8 +51,14 @@ GOOD_JSON = (
 
 
 @pytest.fixture
-def client() -> APIClient:
-    return APIClient()
+def client(django_user_model) -> APIClient:
+    # force_authenticate bypasses JWT so tests don't need real tokens.
+    user = django_user_model.objects.create_user(
+        email="operator@test.local", password="testpass123"
+    )
+    api_client = APIClient()
+    api_client.force_authenticate(user=user)
+    return api_client
 
 
 class FakeProvider:
@@ -443,12 +449,13 @@ def test_an_unknown_status_value_is_400(client: APIClient) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_two_simultaneous_analyse_requests_call_the_model_once(monkeypatch) -> None:
+def test_two_simultaneous_analyse_requests_call_the_model_once(monkeypatch, django_user_model) -> None:
     fake = FakeProvider()
     monkeypatch.setattr(
         "work_items.services.analysis.get_ai_provider", lambda *args, **kwargs: fake
     )
     item = make_work_item(external_id="CRM-race")
+    user = django_user_model.objects.create_user(email="race@test.local", password="pass")
 
     barrier = threading.Barrier(2, timeout=10)
     statuses: list[int] = []
@@ -457,7 +464,9 @@ def test_two_simultaneous_analyse_requests_call_the_model_once(monkeypatch) -> N
     def fire() -> None:
         try:
             barrier.wait()
-            response = APIClient().post(f"{LIST_URL}/{item.id}/analyse")
+            c = APIClient()
+            c.force_authenticate(user=user)
+            response = c.post(f"{LIST_URL}/{item.id}/analyse")
             with lock:
                 statuses.append(response.status_code)
         finally:
