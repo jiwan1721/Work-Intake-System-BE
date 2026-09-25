@@ -230,6 +230,21 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": "/api/v1",
 }
 
+# --- Cache ------------------------------------------------------------------
+# Default: in-process memory cache (fine for dev; doesn't survive restarts).
+# Production: set CACHE_BACKEND + CACHE_LOCATION to use Redis, e.g.:
+#   CACHE_BACKEND=django.core.cache.backends.redis.RedisCache
+#   CACHE_LOCATION=redis://localhost:6379/1
+CACHES = {
+    "default": {
+        "BACKEND": os.environ.get(
+            "CACHE_BACKEND",
+            "django.core.cache.backends.locmem.LocMemCache",
+        ),
+        "LOCATION": os.environ.get("CACHE_LOCATION", ""),
+    }
+}
+
 # --- AI provider (PLAN §7, §11) ---------------------------------------------
 
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "mock").strip().lower()

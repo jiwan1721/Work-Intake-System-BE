@@ -64,10 +64,13 @@ class ForgotPasswordSerializer(DynamicFieldsSerializerMixin, serializers.Seriali
 
 
 class ResetPasswordSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
-    uid = serializers.CharField()
-    token = serializers.CharField()
+    email = serializers.EmailField()
+    otp = serializers.CharField(min_length=6, max_length=6)
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()
 
     def validate(self, attrs):
         if attrs["password"] != attrs["confirm_password"]:

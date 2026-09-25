@@ -28,7 +28,7 @@ class LoginSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
         if user is None or not user.check_password(password):
             raise AuthenticationFailed(_(_LOGIN_FAILED))
         if not user.is_active:
-            raise AuthenticationFailed(_("User account is inactive."))
+            raise AuthenticationFailed(_("User account is inactive. Please verify your email."))
         if user.is_blocked:
             raise AuthenticationFailed(_("User account is blocked."))
 
@@ -64,7 +64,24 @@ class RegisterSerializer(DynamicFieldsModelSerializer):
             password=validated_data["password"],
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
+            # Account is inactive until email is verified via OTP.
+            is_active=False,
         )
+
+
+class VerifyEmailSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(min_length=6, max_length=6)
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class ResendOTPSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
 
 
 class CustomTokenRefreshSerializer(DynamicFieldsSerializerMixin, TokenRefreshSerializer):
