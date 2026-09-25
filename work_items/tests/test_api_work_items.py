@@ -26,6 +26,7 @@ LIST_URL = "/api/v1/work-items"
 PLAN_ITEM_KEYS = {
     "id",
     "externalId",
+    "external_id",
     "title",
     "description",
     "status",
