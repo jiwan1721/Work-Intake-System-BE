@@ -6,10 +6,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from common.mixins.serializers import DynamicFieldsModelSerializer, DynamicFieldsSerializerMixin
+
 User = get_user_model()
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(DynamicFieldsModelSerializer):
     fullName = serializers.CharField(source="full_name", read_only=True)
 
     class Meta:
@@ -33,7 +35,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "email", "isActive", "dateJoined")
 
 
-class PasswordChangeSerializer(serializers.Serializer):
+class PasswordChangeSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True)
@@ -57,11 +59,11 @@ class PasswordChangeSerializer(serializers.Serializer):
         return user
 
 
-class ForgotPasswordSerializer(serializers.Serializer):
+class ForgotPasswordSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
     email = serializers.EmailField()
 
 
-class ResetPasswordSerializer(serializers.Serializer):
+class ResetPasswordSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
     password = serializers.CharField(write_only=True, min_length=8)

@@ -9,12 +9,14 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from common.mixins.serializers import DynamicFieldsModelSerializer, DynamicFieldsSerializerMixin
+
 User = get_user_model()
 
 _LOGIN_FAILED = "Unable to log in with the provided credentials."
 
 
-class LoginSerializer(serializers.Serializer):
+class LoginSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
@@ -38,7 +40,7 @@ class LoginSerializer(serializers.Serializer):
         }
 
 
-class RegisterSerializer(serializers.ModelSerializer):
+class RegisterSerializer(DynamicFieldsModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True)
 
@@ -65,7 +67,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
 
 
-class CustomTokenRefreshSerializer(TokenRefreshSerializer):
+class CustomTokenRefreshSerializer(DynamicFieldsSerializerMixin, TokenRefreshSerializer):
     """Extend the default refresh to reject inactive or blocked users."""
 
     def validate(self, attrs):

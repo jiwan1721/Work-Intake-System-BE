@@ -17,6 +17,7 @@ from typing import Any
 from django.conf import settings
 from rest_framework import serializers
 
+from common.mixins.serializers import DynamicFieldsModelSerializer, DynamicFieldsSerializerMixin
 from ...domain.status import WorkItemStatus
 from ...models import AnalysisAttempt, StatusTransition, WorkItem
 
@@ -24,7 +25,7 @@ from ...models import AnalysisAttempt, StatusTransition, WorkItem
 MAX_DESCRIPTION_CHARS = 10_000
 
 
-class WorkItemIntakeSerializer(serializers.Serializer):
+class WorkItemIntakeSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
     """What the external system may post."""
 
     externalId = serializers.CharField(
@@ -36,7 +37,7 @@ class WorkItemIntakeSerializer(serializers.Serializer):
     )
 
 
-class StatusPatchSerializer(serializers.Serializer):
+class StatusPatchSerializer(DynamicFieldsSerializerMixin, serializers.Serializer):
     """What an operator may request through PATCH /status.
 
     Only the target status: a status change expresses a human decision and
@@ -46,7 +47,7 @@ class StatusPatchSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=WorkItemStatus.values())
 
 
-class AnalysisAttemptSerializer(serializers.ModelSerializer):
+class AnalysisAttemptSerializer(DynamicFieldsModelSerializer):
     attemptNo = serializers.IntegerField(source="attempt_no", read_only=True)
     errorCode = serializers.CharField(source="error_code", read_only=True)
     errorMessage = serializers.CharField(source="error_message", read_only=True)
@@ -74,7 +75,7 @@ class AnalysisAttemptSerializer(serializers.ModelSerializer):
         # treated as a result.
 
 
-class StatusTransitionSerializer(serializers.ModelSerializer):
+class StatusTransitionSerializer(DynamicFieldsModelSerializer):
     fromStatus = serializers.CharField(source="from_status", read_only=True)
     toStatus = serializers.CharField(source="to_status", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
@@ -84,7 +85,7 @@ class StatusTransitionSerializer(serializers.ModelSerializer):
         fields = ("fromStatus", "toStatus", "actor", "reason", "createdAt")
 
 
-class WorkItemSerializer(serializers.ModelSerializer):
+class WorkItemSerializer(DynamicFieldsModelSerializer):
     """The item shape from PLAN §8. Used for list responses and intake."""
 
     externalId = serializers.CharField(source="external_id", read_only=True)
