@@ -128,17 +128,14 @@ TEMPLATES = [
 
 # Inside Docker the host is `db`; outside it is `localhost` (see .env.example).
 DATABASES = {
-    "default": dj_database_url.parse(
-        os.environ.get("DATABASE_URL", "postgres://intake:intake@localhost:5432/intake"),
-        conn_max_age=env_int("DB_CONN_MAX_AGE", 60),
-        # Persistent connections outlive the server they point at. After a
-        # database restart, failover or an idle timeout on a pooler, the first
-        # request to reuse a dead connection fails with OperationalError —
-        # which is a confusing 500 for whoever happens to arrive first. The
-        # health check costs one cheap round trip per request and turns that
-        # into a transparent reconnect.
-        conn_health_checks=True,
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': os.environ.get('DATABASE_NAME', None),
+        'USER': os.environ.get('DATABASE_USER', None),
+        'PASSWORD': os.environ.get('DATABASE_PASSWORD', None),
+        'HOST': os.environ.get('DATABASE_HOST', 'localhost'),
+        'PORT': os.environ.get('DATABASE_PORT', '5432'),
+    },
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
