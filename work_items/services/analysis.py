@@ -20,13 +20,14 @@ violated.
 
 Every exit is accounted for. An `AIError` becomes a FAILED item with its code;
 so does an unexpected exception, because a bug must never leave an item stuck
-in ANALYSING where no operator can act on it.
+in ANALYSING where no operator can act on it. And step 4 may find that the item
+is no longer ANALYSING at all — see `_settle`.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from django.conf import settings
@@ -139,12 +140,52 @@ def run_analysis(
 # --- steps -----------------------------------------------------------------
 
 
+def _settle(
+    item_id: UUID | str,
+    *,
+    to_status: WorkItemStatus,
+    reason: str,
+    **fields: object,
+) -> WorkItem:
+    """Record the outcome, or accept that the item moved on without us.
+
+    Between the claim and here the item spent the whole model call outside any
+    transaction — long enough for the reaper to declare it abandoned (PLAN §5).
+    When that happens the compare-and-set matches nothing, and the right answer
+    is to leave the reaper's state alone: an operator may already be looking at
+    the FAILED item, and a result arriving after we gave up on it must not
+    resurrect the row underneath them.
+
+    So the late result loses, but quietly and safely. Nothing about the call is
+    lost — the attempt row records exactly what the model did — and the caller
+    gets the item as it really is instead of a conflict for a request that was
+    processed correctly.
+    """
+    try:
+        return workflow.transition(
+            item_id,
+            from_status=WorkItemStatus.ANALYSING,
+            to_status=to_status,
+            actor=TransitionActor.SYSTEM,
+            reason=reason,
+            **fields,
+        )
+    except InvalidTransition:
+        logger.warning(
+            "Work item %s left ANALYSING while its analysis was running; "
+            "the %s outcome was recorded on the attempt but discarded.",
+            item_id,
+            to_status,
+        )
+        return _get_item(item_id)
+
+
 def _claim(
     item_id: UUID | str,
     *,
     expected_from: WorkItemStatus,
     provider: AIProvider,
-    at,
+    at: datetime,
 ) -> tuple[WorkItem, AnalysisAttempt]:
     """Compare-and-set into ANALYSING and open an attempt row.
 
@@ -183,7 +224,7 @@ def _record_success(
     result: AnalysisResult,
     *,
     provider: AIProvider,
-    started_at,
+    started_at: datetime,
 ) -> WorkItem:
     finished_at = timezone.now()
 
@@ -196,11 +237,9 @@ def _record_success(
         update_fields=["outcome", "error_code", "error_message", "finished_at", "latency_ms"]
     )
 
-    return workflow.transition(
+    return _settle(
         item.id,
-        from_status=WorkItemStatus.ANALYSING,
         to_status=WorkItemStatus.READY_FOR_REVIEW,
-        actor=TransitionActor.SYSTEM,
         reason=f"analysis succeeded ({provider.name})",
         category=result.category.value,
         priority=result.priority.value,
@@ -221,7 +260,7 @@ def _record_failure(
     code: str,
     message: str,
     raw: str | dict | None,
-    started_at,
+    started_at: datetime,
 ) -> WorkItem:
     finished_at = timezone.now()
 
@@ -245,11 +284,9 @@ def _record_failure(
     # Note what is *not* here: category, priority, summary and
     # recommended_action are left exactly as they were. Bad model output never
     # touches the work item's analysis.
-    return workflow.transition(
+    return _settle(
         item.id,
-        from_status=WorkItemStatus.ANALYSING,
         to_status=WorkItemStatus.FAILED,
-        actor=TransitionActor.SYSTEM,
         reason=f"analysis failed ({code})",
         last_error_code=code,
         last_error_message=message,
@@ -259,7 +296,7 @@ def _record_failure(
 # --- reaping stuck analyses (PLAN §5) --------------------------------------
 
 
-def stale_analysis_cutoff(older_than_seconds: float | None = None):
+def stale_analysis_cutoff(older_than_seconds: float | None = None) -> datetime:
     """The moment before which an ANALYSING item must be considered dead.
 
     Twice the timeout: a healthy call has long since returned, so anything
@@ -333,5 +370,5 @@ def _truncate(raw: str | dict | None) -> str | None:
     return text[: RAW_OUTPUT_MAX_CHARS - 3] + "..."
 
 
-def _elapsed_ms(started_at, finished_at) -> int:
+def _elapsed_ms(started_at: datetime, finished_at: datetime) -> int:
     return max(int((finished_at - started_at).total_seconds() * 1000), 0)

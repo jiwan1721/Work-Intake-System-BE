@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from work_items.domain.status import WorkItemStatus
+from work_items.models import WorkItem
 
 from .factories import make_work_item
 
@@ -14,8 +16,13 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def client() -> APIClient:
-    return APIClient()
+def client(django_user_model) -> APIClient:
+    user = django_user_model.objects.create_user(
+        email="operator@test.local", password="testpass123"
+    )
+    api_client = APIClient()
+    api_client.force_authenticate(user=user)
+    return api_client
 
 
 def assert_envelope(body: dict, code: str) -> dict:
@@ -96,8 +103,7 @@ def test_400_uses_the_envelope_with_field_details(client: APIClient) -> None:
 
     assert response.status_code == 400
     error = assert_envelope(response.json(), "VALIDATION_ERROR")
-    # Field names come back in the camelCase the client sent.
-    assert "externalId" in error["details"]
+    assert "external_id" in error["details"]
     assert "title" in error["details"]
 
 
@@ -181,13 +187,39 @@ def test_an_out_of_range_page_is_a_404_envelope(client: APIClient) -> None:
     assert_envelope(response.json(), "NOT_FOUND")
 
 
+def test_paging_covers_every_item_when_timestamps_collide(client: APIClient) -> None:
+    """Rows created in the same microsecond must still page cleanly.
+
+    `-created_at` on its own leaves such rows in an order PostgreSQL is free to
+    vary between queries, and under LIMIT/OFFSET that shows a row on two pages
+    or on none. The `-id` tiebreaker in `WorkItem.Meta.ordering` is what makes
+    the order total.
+    """
+    for index in range(6):
+        make_work_item(external_id=f"CRM-tie{index}")
+    WorkItem.objects.update(created_at=timezone.now())
+
+    paged = [
+        row["external_id"]
+        for page in (1, 2)
+        for row in client.get(f"/api/v1/work-items?pageSize=3&page={page}").json()["results"]
+    ]
+
+    assert sorted(paged) == [f"CRM-tie{index}" for index in range(6)]
+
+
+def test_the_list_order_is_total() -> None:
+    """A unique column has to come last, or paging is not reproducible."""
+    assert WorkItem._meta.ordering[-1].lstrip("-") == "id"
+
+
 def test_items_come_back_newest_first(client: APIClient) -> None:
     older = make_work_item(external_id="CRM-old")
     newer = make_work_item(external_id="CRM-new")
 
     results = client.get("/api/v1/work-items").json()["results"]
 
-    assert [row["externalId"] for row in results] == [newer.external_id, older.external_id]
+    assert [row["external_id"] for row in results] == [newer.external_id, older.external_id]
 
 
 # --- OpenAPI (BE-13) -------------------------------------------------------

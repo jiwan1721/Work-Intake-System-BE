@@ -19,6 +19,7 @@ import uuid
 
 from django.db import models
 
+from common.models.base import BaseModel
 from .domain.status import AttemptOutcome, TransitionActor, WorkItemStatus
 from .domain.transitions import allowed_actions
 
@@ -26,7 +27,7 @@ from .domain.transitions import allowed_actions
 RAW_OUTPUT_MAX_CHARS = 4096
 
 
-class WorkItem(models.Model):
+class WorkItem(BaseModel):
     # A UUID primary key is not guessable, so it is safe to expose in URLs and
     # to let the external system reference.
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -68,14 +69,17 @@ class WorkItem(models.Model):
     # UI can tell that what it is looking at has moved on.
     version = models.PositiveIntegerField(default=1)
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    # `auto_now` is skipped by QuerySet.update(), which is why
-    # workflow.transition() sets this column explicitly (PLAN §5).
-    updated_at = models.DateTimeField(auto_now=True)
+    # `modified_at` (from BaseModel/TimeStampedModel) uses auto_now, which
+    # QuerySet.update() bypasses — so workflow.transition() sets it explicitly (PLAN §5).
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        # `id` breaks ties. `created_at` alone is not a total order, and
+        # PostgreSQL makes no promise about the order of rows it cannot
+        # distinguish — under LIMIT/OFFSET that lets a row appear on two pages
+        # or on none. Two items created in the same microsecond are rare but
+        # not impossible, and a paginated list must never lose one.
+        ordering = ["-created_at", "-id"]
         constraints = [
             models.UniqueConstraint(fields=["external_id"], name="uniq_work_item_external_id"),
             models.CheckConstraint(
@@ -98,7 +102,18 @@ class WorkItem(models.Model):
                 name="work_item_reviewable_has_analysis",
             ),
         ]
-        indexes = [models.Index(fields=["status", "-created_at"], name="work_item_status_created")]
+        indexes = [
+            models.Index(fields=["status", "-created_at"], name="work_item_status_created"),
+            # The reaper runs on a timer and asks one question: which analyses
+            # started too long ago? A partial index answers it directly and
+            # only ever holds the items currently in flight, so it stays a few
+            # pages wide no matter how large the table grows.
+            models.Index(
+                fields=["analysis_started_at"],
+                name="work_item_analysing_started",
+                condition=models.Q(status=str(WorkItemStatus.ANALYSING)),
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.external_id} ({self.status})"
@@ -125,7 +140,7 @@ class WorkItem(models.Model):
         )
 
 
-class AnalysisAttempt(models.Model):
+class AnalysisAttempt(BaseModel):
     """One row per LLM call, successful or not (PLAN §4)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -161,7 +176,7 @@ class AnalysisAttempt(models.Model):
         return f"attempt {self.attempt_no} of {self.work_item_id}: {self.outcome}"
 
 
-class StatusTransition(models.Model):
+class StatusTransition(BaseModel):
     """Audit trail: every status change, written in the same transaction."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -170,7 +185,6 @@ class StatusTransition(models.Model):
     to_status = models.CharField(max_length=32)
     actor = models.CharField(max_length=16, choices=TransitionActor.choices())
     reason = models.CharField(max_length=255, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]

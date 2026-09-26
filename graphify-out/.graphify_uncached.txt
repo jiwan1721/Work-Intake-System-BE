@@ -1,0 +1,3 @@
+/Users/mac/Documents/Work inteake System/Work-Intake-System-BE/README.md
+/Users/mac/Documents/Work inteake System/Work-Intake-System-BE/requirements-dev.txt
+/Users/mac/Documents/Work inteake System/Work-Intake-System-BE/requirements.txt

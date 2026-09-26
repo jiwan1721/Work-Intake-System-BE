@@ -8,7 +8,18 @@ pytest==8.4.2
 pytest-django==4.14.0
 ruff==0.12.12
 
-# Optional real LLM provider (AI_PROVIDER=anthropic, see docs/decisions.md).
+# Optional real LLM providers (AI_PROVIDER=anthropic|nvidia, see docs/decisions.md).
 # Not needed to run or test the app: the mock provider is the default and
-# the adapter's tests mock the SDK client, so no API key is ever required.
+# each adapter's tests mock the SDK client, so no API key is ever required.
 anthropic==0.125.0
+openai==3.19.2
+
+# LangChain provider (AI_PROVIDER=langchain). Backend SDKs are selected at
+# runtime by LANGCHAIN_BACKEND; only the relevant one needs to be installed.
+langchain-core==1.6.4
+langchain-anthropic==1.7.4
+langchain-openai==1.6.6
+
+# Dev shell utilities.
+ipython==9.17.1
+django-extensions==4.1
