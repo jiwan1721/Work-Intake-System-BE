@@ -19,6 +19,7 @@ import uuid
 
 from django.db import models
 
+from common.models.base import BaseModel
 from .domain.status import AttemptOutcome, TransitionActor, WorkItemStatus
 from .domain.transitions import allowed_actions
 
@@ -26,7 +27,7 @@ from .domain.transitions import allowed_actions
 RAW_OUTPUT_MAX_CHARS = 4096
 
 
-class WorkItem(models.Model):
+class WorkItem(BaseModel):
     # A UUID primary key is not guessable, so it is safe to expose in URLs and
     # to let the external system reference.
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -68,10 +69,8 @@ class WorkItem(models.Model):
     # UI can tell that what it is looking at has moved on.
     version = models.PositiveIntegerField(default=1)
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    # `auto_now` is skipped by QuerySet.update(), which is why
-    # workflow.transition() sets this column explicitly (PLAN §5).
-    updated_at = models.DateTimeField(auto_now=True)
+    # `modified_at` (from BaseModel/TimeStampedModel) uses auto_now, which
+    # QuerySet.update() bypasses — so workflow.transition() sets it explicitly (PLAN §5).
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -141,7 +140,7 @@ class WorkItem(models.Model):
         )
 
 
-class AnalysisAttempt(models.Model):
+class AnalysisAttempt(BaseModel):
     """One row per LLM call, successful or not (PLAN §4)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -177,7 +176,7 @@ class AnalysisAttempt(models.Model):
         return f"attempt {self.attempt_no} of {self.work_item_id}: {self.outcome}"
 
 
-class StatusTransition(models.Model):
+class StatusTransition(BaseModel):
     """Audit trail: every status change, written in the same transaction."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -186,7 +185,6 @@ class StatusTransition(models.Model):
     to_status = models.CharField(max_length=32)
     actor = models.CharField(max_length=16, choices=TransitionActor.choices())
     reason = models.CharField(max_length=255, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]

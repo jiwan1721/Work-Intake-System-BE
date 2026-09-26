@@ -91,7 +91,7 @@ class WorkItemSerializer(DynamicFieldsModelSerializer):
     externalId = serializers.CharField(source="external_id", read_only=True)
     attemptCount = serializers.IntegerField(source="attempt_count", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
-    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="modified_at", read_only=True)
 
     analysis = serializers.SerializerMethodField()
     lastError = serializers.SerializerMethodField()
@@ -102,6 +102,7 @@ class WorkItemSerializer(DynamicFieldsModelSerializer):
         fields = (
             "id",
             "externalId",
+            "external_id",
             "title",
             "description",
             "status",

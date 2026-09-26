@@ -58,7 +58,7 @@ def transition(
             "status": str(to_status),
             "version": F("version") + 1,
             # QuerySet.update() bypasses auto_now, so set it explicitly.
-            "updated_at": now,
+            "modified_at": now,
             **fields,
         }
         if to_status is WorkItemStatus.COMPLETED:
