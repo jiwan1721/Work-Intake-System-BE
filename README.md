@@ -17,8 +17,13 @@ provider (mock by default), and exposes an operator workflow API.
 - [API](#api)
 - [Project layout](#project-layout)
 - [Architecture](#architecture)
+- [Assumptions](#assumptions)
+- [Technical decisions](#technical-decisions)
+- [Production considerations](#production-considerations)
 - [Testing](#testing)
 - [Management commands](#management-commands)
+- [AI usage](#ai-usage)
+- [Time spent](#time-spent)
 
 ---
 
@@ -299,6 +304,55 @@ a concurrent click gets a 409, not a silent double-write.
 
 ---
 
+## Assumptions
+
+These were taken as given when designing the data model and workflow:
+
+- **`externalId` is the idempotency key.** The external system is responsible for keeping it stable and unique. Two requests with the same `externalId` but different payloads are a 409 `DUPLICATE_CONFLICT`, not a silent update.
+- **Work items are immutable after intake.** Title and description never change; only status and analysis fields advance.
+- **Analysis is operator-triggered.** `POST /work-items` receives the item; the operator (or an automated script) calls `POST /analyse` when ready. Automatic analysis on intake was considered but left out — a background worker can be added later without changing the state machine.
+- **`FAILED` means an AI-processing failure only.** Validation errors during intake return 400 immediately and never create a row.
+- **Single operator role, no per-user authorisation.** Any authenticated operator can transition any item. Fine-grained RBAC was out of scope for this assessment.
+- **Category and priority enums are our own definition.** The external system sends free-text; the LLM maps to these enums. Unknown values from the LLM are rejected (→ `FAILED`), not coerced.
+- **Retry cap.** A hard cap of `AI_MAX_ATTEMPTS` (default 5) prevents runaway retries on a persistently broken provider. Items that exceed the cap become permanently `FAILED`.
+- **All timestamps are UTC.** Clients convert to local time; the server never does.
+
+---
+
+## Technical decisions
+
+### 1. Database unique constraint + `get_or_create` over check-then-insert
+
+Two concurrent `POST /work-items` requests with the same `externalId` will both pass an application-level "does it exist?" check before either inserts — a classic race condition. The fix is to let the database be the single arbiter: `get_or_create` issues an `INSERT … ON CONFLICT` under the hood, and the `uniq_work_item_external_id` constraint makes the loser get back the existing row rather than an integrity error. The five-thread concurrency test (`test_five_simultaneous_submissions_create_exactly_one_row`) exercises this path against real PostgreSQL.
+
+### 2. Explicit state machine with compare-and-set transitions
+
+Status transitions are a conditional `UPDATE … WHERE id = :id AND status = :from_status`. Zero rows updated means another request won the race (or the item was already moved), and a 409 is returned immediately. This prevents double-writes without advisory locks or serialisable transactions. A database `CHECK` constraint (`work_item_reviewable_has_analysis`) adds a second backstop: a row in `READY_FOR_REVIEW` or `COMPLETED` without a full analysis cannot exist at the storage layer, regardless of application code.
+
+### 3. LLM output treated as untrusted input
+
+The LLM response goes through a strict Pydantic schema before any database write happens. Unknown enum values are rejected outright (→ `FAILED + retry`) rather than silently defaulted — the PLAN explicitly forbids inventing an `OTHER` bucket. The result fields are written in the *same* `UPDATE` as the status change, so status and analysis data are always consistent. Every attempt is logged with the raw output (truncated to 4 KB) to aid debugging. The provider call is deliberately placed *outside* any `transaction.atomic()` block to avoid holding a database lock across a network call.
+
+---
+
+## Production considerations
+
+**Authentication and authorisation** — Replace the current shared `INTAKE_API_KEY` with mTLS or HMAC-signed requests for the external system ingestion endpoint, and OAuth 2.0 / OIDC (e.g. Auth0 or an internal IdP) for operator login. Add role-based permissions (read-only analyst, full operator, admin) once there is more than one role.
+
+**Background processing** — Move `POST /analyse` to an async worker (Celery + Redis or a managed queue). The service layer already separates the database transaction from the LLM call, so wiring it to a task queue is mostly plumbing. The queue should support per-item retry with exponential backoff and a dead-letter queue for items that exhaust retries.
+
+**Observability** — Structured JSON logs with a correlation ID propagated from intake through analysis. Metrics: LLM call latency (p50/p99), token usage and cost per item, FAILED rate by error code, queue depth. Alerts on FAILED spikes and on analysis lag (items stuck in `ANALYSING` longer than `2 × AI_TIMEOUT_SECONDS`). Distributed tracing (OpenTelemetry) across the API → service → LLM boundary.
+
+**LLM reliability and cost** — Per-item attempt caps (already in place). Model fallback chain: primary model → cheaper/faster fallback → mock on complete outage. Circuit breaker to stop hammering a provider that is returning errors. Prompt versioning so a prompt change can be A/B tested against the eval set before rollout. Caching of identical prompts (same title + description) to avoid redundant API calls on retries.
+
+**Security** — PII/sensitive-data redaction before sending content to the LLM, with a clear data-retention policy and provider DPA in place. Prompt-injection hardening (treat `title` and `description` as data, not instructions). Rate limiting on the intake endpoint per source system. Secret rotation without downtime (read `INTAKE_API_KEY` from a secrets manager, not env vars baked into the image).
+
+**Database** — Managed PostgreSQL (RDS / Cloud SQL) with automated backups and point-in-time recovery. Read replicas for the list/filter endpoint. Archival of `AnalysisAttempt` rows older than a retention window (they can be large with 4 KB raw output). Partitioning `WorkItem` by `created_at` if volume grows significantly.
+
+**API lifecycle** — `Deprecation` / `Sunset` headers on `v1` endpoints once `v2` exists. Per-client version-usage metrics to know when it is safe to remove a version.
+
+---
+
 ## Testing
 
 Run from inside `Work-Intake-System-BE/` so python-dotenv loads the local `.env`:
@@ -336,3 +390,4 @@ python manage.py reap_stale_analyses
 # Generate RSA key pair for JWT_ALGORITHM=RS256 (writes to key-files/)
 python manage.py generate_rsa_keys
 ```
+
