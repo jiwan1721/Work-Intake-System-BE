@@ -112,14 +112,18 @@ class LangChainProvider:
                 f"Set it in .env (never commit it), or use AI_PROVIDER=mock."
             )
 
+        from langchain_core.messages import SystemMessage
         from langchain_core.prompts import ChatPromptTemplate
 
         chat_llm = llm or _build_llm(backend, api_key, self.model)  # type: ignore[arg-type]
         structured_llm = chat_llm.with_structured_output(AnalysisResult)
 
+        # SYSTEM_PROMPT contains literal JSON braces that LangChain would
+        # misparse as template variables if passed as a ("system", ...) tuple.
+        # Wrapping it in SystemMessage skips template interpolation entirely.
         self._prompt = ChatPromptTemplate.from_messages(
             [
-                ("system", SYSTEM_PROMPT),
+                SystemMessage(content=SYSTEM_PROMPT),
                 ("human", "{user_message}"),
             ]
         )
