@@ -66,7 +66,7 @@ def test_same_external_id_with_different_content_is_a_conflict() -> None:
         )
 
     assert exc_info.value.code == "DUPLICATE_CONFLICT"
-    assert exc_info.value.details["externalId"] == "CRM-12345"
+    assert exc_info.value.details["external_id"] == "CRM-12345"
 
     # The stored item must be untouched: a late replay cannot overwrite an
     # item somebody is already reviewing.
