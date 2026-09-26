@@ -14,6 +14,12 @@ ruff==0.12.12
 anthropic==0.125.0
 openai==3.19.2
 
+# LangChain provider (AI_PROVIDER=langchain). Backend SDKs are selected at
+# runtime by LANGCHAIN_BACKEND; only the relevant one needs to be installed.
+langchain-core==1.6.4
+langchain-anthropic==1.7.4
+langchain-openai==1.6.6
+
 # Dev shell utilities.
 ipython==9.17.1
 django-extensions==4.1

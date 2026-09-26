@@ -71,7 +71,7 @@ class WorkItemAdmin(admin.ModelAdmin):
         "analysed_at",
         "analysis_started_at",
         "created_at",
-        "updated_at",
+        "modified_at",
         "completed_at",
     )
 

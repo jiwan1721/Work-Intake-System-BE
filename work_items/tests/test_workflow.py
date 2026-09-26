@@ -18,7 +18,7 @@ pytestmark = pytest.mark.django_db
 
 def test_transition_updates_status_version_and_audit_trail() -> None:
     item = make_work_item(external_id="CRM-1")
-    before = item.updated_at
+    before = item.modified_at
 
     updated = workflow.transition(
         item.id,
@@ -30,7 +30,7 @@ def test_transition_updates_status_version_and_audit_trail() -> None:
 
     assert updated.status == WorkItemStatus.ANALYSING
     assert updated.version == item.version + 1
-    assert updated.updated_at > before
+    assert updated.modified_at > before
 
     audit = StatusTransition.objects.get(work_item=item)
     assert audit.from_status == WorkItemStatus.RECEIVED

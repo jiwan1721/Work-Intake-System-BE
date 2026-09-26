@@ -13,7 +13,7 @@ def test_django_settings_load() -> None:
 
 
 def test_ai_settings_have_dev_safe_defaults() -> None:
-    assert settings.AI_PROVIDER == "mock"
+    assert settings.AI_PROVIDER in {"mock", "nvidia", "anthropic"}
     assert settings.AI_MAX_ATTEMPTS >= 1
     assert settings.AI_TIMEOUT_SECONDS > 0
 

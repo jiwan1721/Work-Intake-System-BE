@@ -54,7 +54,7 @@ class DuplicateConflict(DomainError):
         super().__init__(
             f"Work item {external_id!r} already exists with different content. "
             "The stored item was not modified.",
-            {"externalId": external_id},
+            {"external_id": external_id},
         )
 
 

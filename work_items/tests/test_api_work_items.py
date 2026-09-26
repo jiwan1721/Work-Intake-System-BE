@@ -25,21 +25,21 @@ LIST_URL = "/api/v1/work-items"
 # Exactly the keys in the PLAN §8 example response.
 PLAN_ITEM_KEYS = {
     "id",
-    "externalId",
+    "external_id",
     "title",
     "description",
     "status",
     "analysis",
-    "lastError",
-    "attemptCount",
-    "allowedActions",
+    "last_error",
+    "attempt_count",
+    "allowed_actions",
     "version",
-    "createdAt",
-    "updatedAt",
+    "created_at",
+    "updated_at",
 }
 
 PAYLOAD = {
-    "externalId": "CRM-12345",
+    "external_id": "CRM-12345",
     "title": "Missing income document",
     "description": "The applicant submitted their application but no payslip was attached.",
 }
@@ -51,8 +51,14 @@ GOOD_JSON = (
 
 
 @pytest.fixture
-def client() -> APIClient:
-    return APIClient()
+def client(django_user_model) -> APIClient:
+    # force_authenticate bypasses JWT so tests don't need real tokens.
+    user = django_user_model.objects.create_user(
+        email="operator@test.local", password="testpass123"
+    )
+    api_client = APIClient()
+    api_client.force_authenticate(user=user)
+    return api_client
 
 
 class FakeProvider:
@@ -91,7 +97,7 @@ def test_new_item_returns_201_with_a_location_header(client: APIClient) -> None:
 
     assert response.status_code == 201
     body = response.json()
-    assert body["externalId"] == "CRM-12345"
+    assert body["external_id"] == "CRM-12345"
     assert body["status"] == WorkItemStatus.RECEIVED
     assert response["Location"] == f"/api/v1/work-items/{body['id']}"
 
@@ -101,9 +107,9 @@ def test_the_item_response_matches_the_plan_shape(client: APIClient) -> None:
 
     assert set(body) == PLAN_ITEM_KEYS
     assert body["analysis"] is None
-    assert body["lastError"] is None
-    assert body["attemptCount"] == 0
-    assert body["allowedActions"] == ["analyse"]
+    assert body["last_error"] is None
+    assert body["attempt_count"] == 0
+    assert body["allowed_actions"] == ["analyse"]
     assert body["version"] == 1
 
 
@@ -129,7 +135,7 @@ def test_same_external_id_with_different_content_is_409(client: APIClient) -> No
 
     assert response.status_code == 409
     error = assert_envelope(response.json(), "DUPLICATE_CONFLICT")
-    assert error["details"]["externalId"] == "CRM-12345"
+    assert error["details"]["external_id"] == "CRM-12345"
 
     stored = WorkItem.objects.get(external_id="CRM-12345")
     assert stored.description == PAYLOAD["description"]
@@ -138,12 +144,12 @@ def test_same_external_id_with_different_content_is_409(client: APIClient) -> No
 @pytest.mark.parametrize(
     ("payload", "bad_field"),
     [
-        ({**PAYLOAD, "externalId": ""}, "externalId"),
+        ({**PAYLOAD, "external_id": ""}, "external_id"),
         ({**PAYLOAD, "title": "   "}, "title"),
         ({**PAYLOAD, "description": ""}, "description"),
         ({**PAYLOAD, "title": "x" * 201}, "title"),
         ({**PAYLOAD, "description": "x" * 10_001}, "description"),
-        ({"title": "no external id", "description": "..."}, "externalId"),
+        ({"title": "no external id", "description": "..."}, "external_id"),
     ],
 )
 def test_invalid_payloads_are_400_and_store_nothing(
@@ -177,7 +183,7 @@ def test_status_filter_returns_only_matching_items(client: APIClient) -> None:
     body = client.get(f"{LIST_URL}?status=FAILED").json()
 
     assert body["count"] == 1
-    assert body["results"][0]["externalId"] == "CRM-a"
+    assert body["results"][0]["external_id"] == "CRM-a"
 
 
 def test_an_invalid_status_filter_is_400(client: APIClient) -> None:
@@ -211,7 +217,7 @@ def test_detail_adds_attempts_and_transitions(client: APIClient, provider: FakeP
     assert body["attempts"][0]["outcome"] == "SUCCEEDED"
     assert body["attempts"][0]["provider"] == "fake"
     # Newest first.
-    assert [t["toStatus"] for t in body["transitions"]] == ["READY_FOR_REVIEW", "ANALYSING"]
+    assert [t["to_status"] for t in body["transitions"]] == ["READY_FOR_REVIEW", "ANALYSING"]
 
 
 def test_detail_never_exposes_raw_model_output(client: APIClient, provider: FakeProvider) -> None:
@@ -249,7 +255,7 @@ def test_analyse_returns_200_and_the_analysed_item(
     assert body["status"] == WorkItemStatus.READY_FOR_REVIEW
     assert body["analysis"]["category"] == "DOCUMENT_REQUEST"
     assert body["analysis"]["model"] == "fake-v1"
-    assert body["allowedActions"] == ["complete"]
+    assert body["allowed_actions"] == ["complete"]
 
 
 @pytest.mark.parametrize(
@@ -271,9 +277,9 @@ def test_an_ai_failure_is_200_with_a_failed_item_not_a_5xx(
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == WorkItemStatus.FAILED
-    assert body["lastError"]["code"] == code
+    assert body["last_error"]["code"] == code
     assert body["analysis"] is None
-    assert body["allowedActions"] == ["retry"]
+    assert body["allowed_actions"] == ["retry"]
 
 
 @pytest.mark.parametrize(
@@ -319,9 +325,9 @@ def test_analyse_is_200_even_when_the_reaper_wins(
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == WorkItemStatus.FAILED
-    assert body["lastError"]["code"] == STALE_ANALYSIS_CODE
+    assert body["last_error"]["code"] == STALE_ANALYSIS_CODE
     assert body["analysis"] is None
-    assert body["allowedActions"] == ["retry"]
+    assert body["allowed_actions"] == ["retry"]
 
 
 def test_analyse_on_an_unknown_item_is_404(client: APIClient, provider: FakeProvider) -> None:
@@ -345,8 +351,8 @@ def test_retry_from_failed_succeeds(client: APIClient, provider: FakeProvider) -
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == WorkItemStatus.READY_FOR_REVIEW
-    assert body["attemptCount"] == 2
-    assert body["lastError"] is None
+    assert body["attempt_count"] == 2
+    assert body["last_error"] is None
 
 
 @pytest.mark.parametrize(
@@ -399,7 +405,7 @@ def test_completing_a_reviewed_item(client: APIClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == WorkItemStatus.COMPLETED
-    assert body["allowedActions"] == []
+    assert body["allowed_actions"] == []
     assert WorkItem.objects.get(pk=item.id).completed_at is not None
 
 
@@ -443,12 +449,13 @@ def test_an_unknown_status_value_is_400(client: APIClient) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_two_simultaneous_analyse_requests_call_the_model_once(monkeypatch) -> None:
+def test_two_simultaneous_analyse_requests_call_the_model_once(monkeypatch, django_user_model) -> None:
     fake = FakeProvider()
     monkeypatch.setattr(
         "work_items.services.analysis.get_ai_provider", lambda *args, **kwargs: fake
     )
     item = make_work_item(external_id="CRM-race")
+    user = django_user_model.objects.create_user(email="race@test.local", password="pass")
 
     barrier = threading.Barrier(2, timeout=10)
     statuses: list[int] = []
@@ -457,7 +464,9 @@ def test_two_simultaneous_analyse_requests_call_the_model_once(monkeypatch) -> N
     def fire() -> None:
         try:
             barrier.wait()
-            response = APIClient().post(f"{LIST_URL}/{item.id}/analyse")
+            c = APIClient()
+            c.force_authenticate(user=user)
+            response = c.post(f"{LIST_URL}/{item.id}/analyse")
             with lock:
                 statuses.append(response.status_code)
         finally:

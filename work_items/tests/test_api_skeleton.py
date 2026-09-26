@@ -16,8 +16,13 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def client() -> APIClient:
-    return APIClient()
+def client(django_user_model) -> APIClient:
+    user = django_user_model.objects.create_user(
+        email="operator@test.local", password="testpass123"
+    )
+    api_client = APIClient()
+    api_client.force_authenticate(user=user)
+    return api_client
 
 
 def assert_envelope(body: dict, code: str) -> dict:
@@ -98,8 +103,7 @@ def test_400_uses_the_envelope_with_field_details(client: APIClient) -> None:
 
     assert response.status_code == 400
     error = assert_envelope(response.json(), "VALIDATION_ERROR")
-    # Field names come back in the camelCase the client sent.
-    assert "externalId" in error["details"]
+    assert "external_id" in error["details"]
     assert "title" in error["details"]
 
 
@@ -196,7 +200,7 @@ def test_paging_covers_every_item_when_timestamps_collide(client: APIClient) -> 
     WorkItem.objects.update(created_at=timezone.now())
 
     paged = [
-        row["externalId"]
+        row["external_id"]
         for page in (1, 2)
         for row in client.get(f"/api/v1/work-items?pageSize=3&page={page}").json()["results"]
     ]
@@ -215,7 +219,7 @@ def test_items_come_back_newest_first(client: APIClient) -> None:
 
     results = client.get("/api/v1/work-items").json()["results"]
 
-    assert [row["externalId"] for row in results] == [newer.external_id, older.external_id]
+    assert [row["external_id"] for row in results] == [newer.external_id, older.external_id]
 
 
 # --- OpenAPI (BE-13) -------------------------------------------------------
